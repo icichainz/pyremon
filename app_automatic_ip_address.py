@@ -44,15 +44,17 @@ async def save_to_csv(data: Dict[str, Tuple[str, int, int]]):
 async def scan_network(ip_range: str):
     devices = {}
 
-    try:
-        result = await asyncio.get_event_loop().run_in_executor(None, srp, Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=ip_range), None, 2, False)
-        ans, _ = result[0]
-
-        for sent, received in ans:
-            ip = received.psrc
-            mac = received.hwsrc
-            upload_speed, download_speed = await get_speed()
+    def handle_packet(packet):
+        if packet[ARP].op == 2:  # Response packet
+            ip = packet[ARP].psrc
+            mac = packet[ARP].hwsrc
+            upload_speed, download_speed = get_speed()
             devices[ip] = (mac, upload_speed, download_speed)
+            print(f"{devices[ip]}")
+
+    try:
+        await asyncio.get_event_loop().run_in_executor(None,
+                                                       srp, Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=ip_range), None, 2, handle_packet)
     
     except Exception as e:
         print(f"An error occurred: {e}")
@@ -88,6 +90,7 @@ async def main() -> None:
         return
 
     while True:
+        print(f"ip range {ip_range}")
         devices = await scan_network(ip_range)
 
         for ip, (mac, upload_speed, download_speed) in devices.items():
@@ -96,7 +99,7 @@ async def main() -> None:
             print(f"Download speed: {download_speed} bytes/sec")
             print()
 
-        #await save_to_csv(devices)
+        await save_to_csv(devices)
 
         await asyncio.sleep(5)
 
